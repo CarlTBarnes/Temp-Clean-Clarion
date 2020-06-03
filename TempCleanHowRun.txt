@@ -1,0 +1,19 @@
+When Closing the Frame in ProcedureReturn
+
+IF AbortCls.CloseFast=0 THEN   !NOT if the Frame get Notified it Must shutdown aka CloseFast
+   DO RunTempCleanRtn 
+END
+
+RunTempCleanRtn ROUTINE
+    DATA
+DateLast    LONG
+    CODE
+    !INI file MUST be Per User w..g %AppData%.   Better to use GETREG(REG_CURRENT_USER
+    DateLast=GETINI('TempClean','DateLast',0,WinPosIni)
+    !Message('DateLast=' & DateLast &'  '& WinPosIni )
+    IF ~DateLast OR TODAY()-DateLast>14 THEN
+        RUN('TempClean.EXE')  ! add /view to see files before and have GO button.  add /wait to pause at end
+        PUTINI('TempClean','DateLast',TODAY(),WinPosIni)
+        !RUN('notepad ' & CLIP(WinPosIni))
+    END
+    EXIT
