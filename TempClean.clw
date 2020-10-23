@@ -43,9 +43,10 @@ YES_Delete_Files   EQUATE(0) !<--- When (1) DeleteFile() actually happens, else 
 !   1. *.Wmf        files zero bytes in size
 !   2. [0-9]*.Wmf   files named 12345678*.WMF   CPCS creates WMF with all numeric names that are not always purged.
 !   3. CLA*.Tmp     Report preview WMF made by RTF
-!   3. PDF*.Tmp     Tracker makes these files
+!   4. PDF*.Tmp     Tracker makes these files  
+!   5. Empty Folders   Various programs leave folders without files  !10/23/20
 !
-! Files must be over 4 days old to be purged, in case use has left report open.
+! Files must be over 4 days old to be purged, in case user has left report open.
 
 !region How to use:
 !   When the Frame Window close every 14 days run this to do house keeping. The first time it may find MANY files
@@ -72,7 +73,8 @@ DB              PROCEDURE(STRING xMessage)
         GetTempPath(LONG nBufferLength,*CSTRING lpTempPath),LONG,PASCAL,DLL(1),RAW,NAME('GetTempPathA'),PROC
         DeleteFile(*CSTRING lpFileName ),BOOL,RAW,PASCAL,DLL(1),PROC,name('DeleteFileA')
         GetLastError(),Long,PASCAL,DLL(1)
-        OutputDebugString(*cstring Msg),PASCAL,RAW,NAME('OutputDebugStringA'),DLL(1)        
+        OutputDebugString(*cstring Msg),PASCAL,RAW,NAME('OutputDebugStringA'),DLL(1)
+        RemoveDirectory(*CSTRING lpPathName ),BOOL,PROC,RAW,PASCAL,DLL(1),NAME('RemoveDirectoryA')
     END          
   END
 IsVIEW  BYTE !/View = Pause to view files with GO button, also waits at end
@@ -80,8 +82,10 @@ IsWAIT  BYTE !/wait = Purge but do NOT close at end
   CODE
   IF INSTRING('view',lower(command('')),1) THEN IsVIEW=1. !Run /VIEW to not Purge
   IF INSTRING('wait',lower(command('')),1) THEN IsWAIT=1. !Run /WAIT to not Purge
-  IF ~IsVIEW AND ~IsWAIT AND ~INSTRING('wait',lower(command('')),1) THEN
-  END   
+  !IF ~IsVIEW AND ~IsWAIT AND ~INSTRING('secret',lower(command('')),1) THEN
+      !Message('Temp Clean can only be run by Company Name software.')
+      !RETURN  
+  !END   
   TempPurgeTmp()
 !-----------
 TempPurgeTmp    PROCEDURE()
@@ -157,6 +161,7 @@ Exten       STRING(4)
              END
          END
     END !LOOP Delete files
+    DO AddFoldersToDirQRtn     !10/23/20 
     SortNow=1
     SortNowWho=WHO(DirQ,SortNow) 
     SORT(DirQ , DirQ:Name)  !  DirQ:Name , DirQ:ShortName , DirQ:Date , DirQ:Time , DirQ:Size , DirQ:Attrib )    
@@ -201,7 +206,13 @@ Exten       STRING(4)
                     CYCLE 
                 END 
 
-                IF ~DeleteFile(cFileName) THEN 
+                IF BAND(DirQ.Attrib,ff_:DIRECTORY) THEN  !10/23/20  Empty Folders
+                   IF ~RemoveDirectory(cFileName) THEN
+                       DirQ:ShortName='Error ' & GetLastError() 
+                       IF DirQ:ShortName='Error 145' THEN DirQ:ShortName='<Dir> w/Files'.
+                       PUT(DIRQ) ; DISPLAY
+                   END
+                ELSIF ~DeleteFile(cFileName) THEN 
                     DirQ:ShortName='Error ' & GetLastError() ; PUT(DIRQ)
                     DISPLAY ; BREAK
                 ELSE
@@ -221,8 +232,12 @@ Exten       STRING(4)
           OF EVENT:NewSelection !DblClick to View 1 File
              IF KEYCODE()=MouseLeft2 THEN
                 GET(DirQ,CHOICE(?ListFiles))
-                MESSAGE(CLIP(DirQ:Name) &'|'& DirQ:ShortName &'|'& DirQ:Date &'|'& DirQ:Time &'|'& DirQ:Size |
-                        &'|'& DirQ:Attrib,'File '&CHOICE(?ListFiles),,,,2)
+                CASE MESSAGE(DirQ:Name &'||Exten: <9>'& DirQ:ShortName &|
+                        '|Date: <9>'& FORMAT(DirQ:Date,@d02) &'|Time: <9>'& FORMAT(DirQ:Time,@t6) &|
+                        '|Size: <9>'& DirQ:Size &'|Attrib: <9>'& DirQ:Attrib,|
+                        'File '&CHOICE(?ListFiles),,'Close|Explore',,MSGMODE:CANCOPY)
+                OF 2 ; RUN('Explorer.exe /select,"' & CLIP(WinTempBS & clip(DirQ:Name)) &'"')
+                END
              END
           OF EVENT:PreAlertKey
              IF KEYCODE()=CtrlC THEN
@@ -253,6 +268,26 @@ Exten       STRING(4)
        END ! Case FIELD()
     END !ACCEPT
     CLOSE(FilesWindow)
+    RETURN
+
+AddFoldersToDirQRtn ROUTINE  !10/23/20 seeing a lot of Empty folders so try to remove them
+    DATA
+FoldQ    QUEUE(FILE:Queue),PRE(FoldQ) . ! FoldQ:Name  FoldQ:ShortName(8.3?)  FoldQ:Date  FoldQ:Time  FoldQ:Size  FoldQ:Attrib
+    CODE 
+    DIRECTORY(FoldQ,WinTempBS&'*.*',ff_:NORMAL+FF_:Directory)
+    LOOP QNdx = RECORDS(FoldQ) TO 1 BY -1
+         GET(FoldQ,QNdx)
+         IF ~BAND(FoldQ:Attrib,FF_:Directory) OR FoldQ:Name='.' OR FoldQ:Name='..'   !. or .. Dirs
+            CYCLE 
+         ELSIF FoldQ:Date >= DateCutoff - 7 THEN  !Keep folders extra 7 days
+            CYCLE 
+         END 
+         FoldQ:Name=LOWER(FoldQ:Name)
+         FoldQ:shortname='<<Dir>'   
+         DirQ = FoldQ 
+         ADD(DirQ) 
+    END 
+    EXIT    
 !------------------------------
 DB   PROCEDURE(STRING xMessage)
 Prfx EQUATE('TmpCln: ')
