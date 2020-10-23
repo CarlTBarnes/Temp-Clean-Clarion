@@ -18,5 +18,5 @@ You can run with a /VIEW switch and the window will pause with a GO button.
 
 ![capture](readme_view.png)
 
-October 23, 2020, enhanced to remove empty folders. This has nothing to do with Clarion. I noticed empty folders left in my temp folder and decided this house keeping program could remnove them.
- This relies on RemoveDirectory() being documented to only empoty folders or it throws and error 145.
+October 23, 2020, enhanced to remove empty folders. This has nothing to do with Clarion. I noticed empty folders left in my temp folder and decided to enhance this housekeeping program to remnove them.
+ This relies on RemoveDirectory() being documented to only remove empty folders or it throws an error 145.
