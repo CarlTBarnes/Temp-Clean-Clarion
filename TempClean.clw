@@ -42,9 +42,11 @@ YES_Delete_Files   EQUATE(0) !<--- When (1) DeleteFile() actually happens, else 
 ! What does this Delete?
 !   1. *.Wmf        files zero bytes in size
 !   2. [0-9]*.Wmf   files named 12345678*.WMF   CPCS creates WMF with all numeric names that are not always purged.
-!   3. CLA*.Tmp     Report preview WMF made by RTF
+!   3. CLA*.Tmp     Report preview WMF made by RTL
+!   3a. CLA*.Wmf    Report preview WMF made by RTL. In 11.1.13744 (first release) extension changed .TMP to .WMF. Also 13758.  09/17/21
 !   4. PDF*.Tmp     Tracker makes these files  
 !   5. Empty Folders   Various programs leave folders without files  !10/23/20
+
 !
 ! Files must be over 4 days old to be purged, in case user has left report open.
 
@@ -105,10 +107,10 @@ ProgPctNew  LONG
 ProgRecords LONG
 ProgRatio   REAL
 
-FilesWindow WINDOW('Temp Folder Cleanup'),AT(,,320,130),CENTER,GRAY,SYSTEM, |   !,ICON('Mark2.ICO')
-            FONT('Segoe UI',9,,FONT:regular),RESIZE
-        BUTTON('Go'),AT(0,0,14,12),USE(?GoBtn),TIP('IsVIEW=1'),HIDE
-        PROGRESS,AT(17,2,286,9),USE(ProgPct),RANGE(0,100)
+FilesWindow WINDOW('Temp Folder Cleanup'),AT(,,320,130),CENTER,GRAY,SYSTEM,FONT('Segoe UI',9,,FONT:regular), |
+            RESIZE
+        BUTTON('&Purge'),AT(1,0,25,12),USE(?GoBtn),HIDE,TIP('Purge Temp Folder Files - IsVIEW=1')
+        PROGRESS,AT(37,2,276,9),USE(ProgPct),RANGE(0,100)
         LIST,AT(1,15),FULL,USE(?ListFiles),VSCROLL,TIP('Click heads to sort, Right Click to reverse,' & |
                 ' Ctrl+C to Copy'),FROM(DirQ),FORMAT('138L(1)|M~Name~@s255@52L(1)|M~EXT~@s13@40R(1)|' & |
                 'M~Date~C(0)@d1@40R(1)|M~Time~C(0)@T4b@46R(1)|M~Size~C(0)@n13@'),ALRT(CtrlC)
@@ -118,9 +120,16 @@ DateCutoff  LONG
 LenFN       USHORT
 Exten       STRING(4) 
     CODE
-    IF ~GetTempPath(SIZE(WinTempBS),WinTempBS) THEN RETURN.
-    IF ~WinTempBS OR ~EXISTS(WinTempBS) THEN RETURN.
-    DateCutoff=TODAY()-4
+    IF ~GetTempPath(SIZE(WinTempBS),WinTempBS) |
+    OR ~WinTempBS OR ~EXISTS(WinTempBS)        THEN 
+        DB('TempClean: GetTempPath() failed or folder does not exist, WinTempBS="'& WinTempBS &'" Last Error: ' & GetLastError()&' - '& COMMAND('0')) 
+        IF IsVIEW THEN
+           Message('GetTempPath() failed or folder does not exist||WinTempBS: '& WinTempBS &'||Last Error: ' & GetLastError() &|
+                   '||Program: '&COMMAND('0') ,'TempClean:',ICON:Exclamation)
+        END 
+        RETURN        
+    END    
+    DateCutoff=TODAY()-4 ! +4+7 !uncomment to see all current files
     DB('TempFolder: ' & WinTempBS & '  YES_Delete_Files=' & YES_Delete_Files )
     DB('DateCutoff: ' & FORMAT(DateCutoff,@d2))
     FREE(DirQ)
@@ -143,8 +152,10 @@ Exten       STRING(4)
 
          ELSE
              CASE Exten
-             OF '.wmf'  !Delete  Zero Byte .WMF OR 12345678.WMF Created by CPCS
-                    IF ~NUMERIC(DirQ:Name[1:8]) AND DirQ:Size THEN
+             OF '.wmf'  !Delete  Zero Byte .WMF OR 12345678.WMF Created by CPCS 
+                    IF DirQ:Name[1:3]='cla' THEN        !09/17/21
+                       !Delete CLA*.Wmf changed in 11.1.13744 was .TMP since 1.0
+                    ELSIF ~NUMERIC(DirQ:Name[1:8]) AND DirQ:Size THEN
                         DirQ:Name=' skip ' & DirQ:Name              !Only Delete CPCS or Zero Byte
                     END
              OF '.tmp'
@@ -270,7 +281,8 @@ Exten       STRING(4)
     CLOSE(FilesWindow)
     RETURN
 
-AddFoldersToDirQRtn ROUTINE  !10/23/20 seeing a lot of Empty folders so try to remove them
+AddFoldersToDirQRtn ROUTINE  !10/23/20 seeing a lot of Empty folders so try to remove them. 
+!This is NOT a Clarion created folder. Since I am cleaning up my user's temp I decided an empty folder over 10 days old can go.
     DATA
 FoldQ    QUEUE(FILE:Queue),PRE(FoldQ) . ! FoldQ:Name  FoldQ:ShortName(8.3?)  FoldQ:Date  FoldQ:Time  FoldQ:Size  FoldQ:Attrib
     CODE 
