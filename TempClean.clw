@@ -132,57 +132,11 @@ Exten       STRING(4)
     DateCutoff=TODAY()-4 ! +4+7 !uncomment to see all current files
     DB('TempFolder: ' & WinTempBS & '  YES_Delete_Files=' & YES_Delete_Files )
     DB('DateCutoff: ' & FORMAT(DateCutoff,@d2))
-    FREE(DirQ)
-    DIRECTORY(DirQ,WinTempBS&'*.tmp',ff_:NORMAL)
-    DIRECTORY(DirQ,WinTempBS&'*.wmf',ff_:NORMAL)
-
-    LOOP QNdx = RECORDS(DirQ) TO 1 BY -1
-         GET(DirQ,QNdx)
-             DirQ:Name=LOWER(DirQ:Name)
-             LenFN=LEN(CLIP(DirQ:Name))
-             Exten=SUB(DirQ:Name,LenFn-3,4) ; DirQ:shortname=Exten
-             PUT(DirQ) 
-
-         IF BAND(DirQ:Attrib,FF_:Directory) OR DirQ:Name='.' OR DirQ:Name='..'   
-            DELETE(DirQ)  !skip . or .. Dirs
-
-         ELSIF DirQ:Date > DateCutoff THEN
-            !DirQ:Name=' date ' & DirQ:Name ; PUT(DirQ)     !see Date cutoff in list 
-            DELETE(DirQ)
-
-         ELSE
-             CASE Exten
-             OF '.wmf'  !Delete  Zero Byte .WMF OR 12345678.WMF Created by CPCS 
-                    IF DirQ:Name[1:3]='cla' THEN        !09/17/21
-                       !Delete CLA*.Wmf changed in 11.1.13744 was .TMP since 1.0
-                    ELSIF ~NUMERIC(DirQ:Name[1:8]) AND DirQ:Size THEN
-                        DirQ:Name=' skip ' & DirQ:Name              !Only Delete CPCS or Zero Byte
-                    END
-             OF '.tmp'
-                    IF DirQ:Name[1:3]='pdf' OR DirQ:Name[1:3]='cla' THEN    !Tracker PDF####.Tmp or CLA###.Tmp Temp Report
-                    ELSE    
-                       DirQ:Name=' skip ' & DirQ:Name
-                    END 
-             END             
-             IF ~DirQ:Name[1] THEN   !is [1] Blank ' skip'  !Change to [2] to test other files
-                !    PUT(DirQ)               !Test so Skip in List
-                DELETE(DirQ)
-             ELSE
-                PUT(DirQ)
-             END
-         END
-    END !LOOP Delete files
-    DO AddFoldersToDirQRtn     !10/23/20 
-    SortNow=1
-    SortNowWho=WHO(DirQ,SortNow) 
-    SORT(DirQ , DirQ:Name)  !  DirQ:Name , DirQ:ShortName , DirQ:Date , DirQ:Time , DirQ:Size , DirQ:Attrib )    
-
-    ProgRecords=RECORDS(DirQ)
-    ProgRatio=100/ProgRecords
 
     !===== Test Window to View Directory() ========================================
     SYSTEM{PROP:PropVScroll}=1
     OPEN(FilesWindow)
+    DO LoadTempFolderToDirQRtn
     ?ListFiles{PROP:Alrt,255}=MouseLeft
     
     IF IsVIEW THEN 
@@ -191,7 +145,6 @@ Exten       STRING(4)
        0{PROP:Timer}=1
     END
     ?ListFiles{PROP:PropVScroll}=1
-    0{PROP:Text}=0{PROP:Text} &'  '& WinTempBS & ' (' & RECORDS(DirQ) &' records) ' 
 
     IF YES_Delete_Files=0 THEN 
         0{PROP:Text}='0=YES_Delete - ' & 0{PROP:Text}
@@ -280,7 +233,58 @@ Exten       STRING(4)
     END !ACCEPT
     CLOSE(FilesWindow)
     RETURN
+!------------------------------
+LoadTempFolderToDirQRtn ROUTINE
+    FREE(DirQ) ; ProgPct=0                                     
+    0{PROP:Text}='Loading Temp Folder ...' ; DISPLAY
+    DIRECTORY(DirQ,WinTempBS&'*.tmp',ff_:NORMAL)
+    DIRECTORY(DirQ,WinTempBS&'*.wmf',ff_:NORMAL)
 
+    LOOP QNdx = RECORDS(DirQ) TO 1 BY -1
+         GET(DirQ,QNdx)
+             DirQ:Name=LOWER(DirQ:Name)
+             LenFN=LEN(CLIP(DirQ:Name))
+             Exten=SUB(DirQ:Name,LenFn-3,4) ; DirQ:shortname=Exten
+
+         IF BAND(DirQ:Attrib,FF_:Directory) OR DirQ:Name='.' OR DirQ:Name='..'   
+            DELETE(DirQ)  !skip . or .. Dirs
+
+         ELSIF DirQ:Date > DateCutoff THEN
+            !DirQ:Name=' date ' & DirQ:Name ; PUT(DirQ)     !see Date cutoff in list 
+            DELETE(DirQ)
+
+         ELSE
+             CASE Exten
+             OF '.wmf'  !Delete  Zero Byte .WMF OR 12345678.WMF Created by CPCS 
+                    IF DirQ:Name[1:3]='cla' THEN        !09/17/21
+                       !Delete CLA*.Wmf - RTL changed in 11.1.13744 was .TMP since 1.0
+                    ELSIF ~NUMERIC(DirQ:Name[1:8]) AND DirQ:Size THEN
+                        DirQ:Name=' skip ' & DirQ:Name              !Only Delete CPCS NUmeric.WMF or Zero Byte
+                    END
+             OF '.tmp'
+                    IF DirQ:Name[1:3]='pdf' OR DirQ:Name[1:3]='cla' THEN    !Tracker PDF####.Tmp or CLA###.Tmp Temp Report
+                    ELSE    
+                       DirQ:Name=' skip ' & DirQ:Name
+                    END 
+             END             
+             IF ~DirQ:Name[1] THEN   !is [1] Blank ' skip'  !Change to [2] to test other files
+                !    PUT(DirQ)               !Test so Skip in List
+                DELETE(DirQ)
+             ELSE
+                PUT(DirQ)
+             END
+         END
+    END !LOOP Delete files
+    DO AddFoldersToDirQRtn     !10/23/20 
+    0{PROP:Text}='Temp Folder Cleanup  '& WinTempBS & '  (' & RECORDS(DirQ) &' records) '     
+    SortNow=1
+    SortNowWho=WHO(DirQ,SortNow) 
+    SORT(DirQ , DirQ:Name)  !  DirQ:Name , DirQ:ShortName , DirQ:Date , DirQ:Time , DirQ:Size , DirQ:Attrib )
+    ProgRecords=RECORDS(DirQ)
+    ProgRatio=100/ProgRecords    
+    DISPLAY
+    EXIT
+!------------------------------
 AddFoldersToDirQRtn ROUTINE  !10/23/20 seeing a lot of Empty folders so try to remove them. 
 !This is NOT a Clarion created folder. Since I am cleaning up my user's temp I decided an empty folder over 10 days old can go.
     DATA
