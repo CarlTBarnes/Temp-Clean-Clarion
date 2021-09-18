@@ -27,15 +27,17 @@
 
   PROGRAM
 
-
-YES_Delete_Files   EQUATE(0) !<--- When (1) DeleteFile() actually happens, else outputs debug only
+YES_Delete_Files   EQUATE(0)    !<--- When (1) DeleteFile() actually happens, else outputs debug only
+YES_Remove_Folders EQUATE(1)    !<--- When (1) RemoveDirectory() that are Empty folders, requires YES_Delete_Files=1 to really happen
+File_Cutoff_Days   EQUATE(4)    !<--- Files   MUST be 4 days  old to be Deleted, change to (0) for all files
+Folder_Cutoff_Days EQUATE(10)   !<--- Folders MUST be 10 days old to be Removed
                    !^^^^^^^^
                    
 ! [ ] Test it out before you set YES_Delete as (1)
 ! [ ] Suggest you put your Company Name in the Window Caption.
                   
                   
-! Run with /VIEW commandline to see the files before Cleaning and have to press GO button. CW Project is set this way.
+! Run with /VIEW commandline to see the files before Cleaning and have to press PURGE button. CW Project is set this way.
 !
 ! CAUTION: This does DELETE files from the TEMP folder. You MUST verify it works as desired or you RISK losing files
 
@@ -61,7 +63,7 @@ YES_Delete_Files   EQUATE(0) !<--- When (1) DeleteFile() actually happens, else 
 !        DateLast=GETINI('TempClean','DateLast',0,WinPosIni)   
 !        IF ~DateLast OR TODAY()-DateLast > 14 THEN
 !            RUN('TempClean.EXE')  
-!            ! add /view to see files before and have GO button.  add /wait to pause at end
+!            ! Add /VIEW to see files before and have PURGE button. Add /WAIT to pause at end. Do this if BackDoor user.
 !            PUTINI('TempClean','DateLast',TODAY(),WinPosIni)
 !        END
 !endregion     
@@ -79,14 +81,16 @@ DB              PROCEDURE(STRING xMessage)
         RemoveDirectory(*CSTRING lpPathName ),BOOL,PROC,RAW,PASCAL,DLL(1),NAME('RemoveDirectoryA')
     END          
   END
-IsVIEW  BYTE !/View = Pause to view files with GO button, also waits at end
-IsWAIT  BYTE !/wait = Purge but do NOT close at end 
+IsVIEW  BYTE !/View = Pause to view files. Press PURGE button to run. Also waits at end to see results.
+IsWAIT  BYTE !/Wait = Purge automatically, but do NOT close at end so can see results.
   CODE
-  IF INSTRING('view',lower(command('')),1) THEN IsVIEW=1. !Run /VIEW to not Purge
-  IF INSTRING('wait',lower(command('')),1) THEN IsWAIT=1. !Run /WAIT to not Purge
-  !IF ~IsVIEW AND ~IsWAIT AND ~INSTRING('secret',lower(command('')),1) THEN
-      !Message('Temp Clean can only be run by Company Name software.')
-      !RETURN  
+  IF INSTRING('view',lower(command('')),1) THEN IsVIEW=1. !Run with /VIEW sets IsVIEW=1 
+  IF INSTRING('wait',lower(command('')),1) THEN IsWAIT=1. !Run with /WAIT sets IsWAIT=1
+
+  !Uncomment to require Secret command line parameter to run this so users cannot just double click on it. Should not be needed
+  !IF ~IsVIEW AND ~IsWAIT AND ~INSTRING('secret',lower(command('')),1) THEN  
+  !    Message('Temp Clean can only be run by Company Name software.','Temp Folder Clean')
+  !    RETURN  
   !END   
   TempPurgeTmp()
 !-----------
@@ -109,11 +113,12 @@ ProgRatio   REAL
 
 FilesWindow WINDOW('Temp Folder Cleanup'),AT(,,320,130),CENTER,GRAY,SYSTEM,FONT('Segoe UI',9,,FONT:regular), |
             RESIZE
-        BUTTON('&Purge'),AT(1,0,25,12),USE(?GoBtn),HIDE,TIP('Purge Temp Folder Files - IsVIEW=1')
-        PROGRESS,AT(37,2,276,9),USE(ProgPct),RANGE(0,100)
+        BUTTON('&Purge'),AT(2,1,29,12),USE(?GoBtn),HIDE,TIP('Purge Temp Folder Files - IsVIEW=1')
+        BUTTON('&Refresh'),AT(289,1,29,12),USE(?RefreshBtn),KEY(F5Key),HIDE,TIP('F5 to Refresh')
+        PROGRESS,AT(39,2,242,9),USE(ProgPct),RANGE(0,100)
         LIST,AT(1,15),FULL,USE(?ListFiles),VSCROLL,TIP('Click heads to sort, Right Click to reverse,' & |
                 ' Ctrl+C to Copy'),FROM(DirQ),FORMAT('138L(1)|M~Name~@s255@52L(1)|M~EXT~@s13@40R(1)|' & |
-                'M~Date~C(0)@d1@40R(1)|M~Time~C(0)@T4b@46R(1)|M~Size~C(0)@n13@'),ALRT(CtrlC)
+                'M~Date~C(0)@d1@40R(1)|M~Time~C(0)@T4b@46R(1)~Size~C(0)@n13@'),ALRT(CtrlC)
     END
 Dir2Clp     ANY
 DateCutoff  LONG
@@ -129,18 +134,18 @@ Exten       STRING(4)
         END 
         RETURN        
     END    
-    DateCutoff=TODAY()-4 ! +4+7 !uncomment to see all current files
+    DateCutoff=TODAY()-File_Cutoff_Days  !comment to see all files or change Equate at Top
     DB('TempFolder: ' & WinTempBS & '  YES_Delete_Files=' & YES_Delete_Files )
-    DB('DateCutoff: ' & FORMAT(DateCutoff,@d2))
+    DB('DateCutoff: ' & FORMAT(DateCutoff,@d2) &' Days=' & File_Cutoff_Days) 
 
     !===== Test Window to View Directory() ========================================
     SYSTEM{PROP:PropVScroll}=1
     OPEN(FilesWindow)
     DO LoadTempFolderToDirQRtn
-    ?ListFiles{PROP:Alrt,255}=MouseLeft
     
+    ?ListFiles{PROP:Alrt,255}=MouseLeft
     IF IsVIEW THEN 
-       UNHIDE(?GoBtn)
+       UNHIDE(?GoBtn) ; UNHIDE(?RefreshBtn)
     ELSE
        0{PROP:Timer}=1
     END
@@ -154,14 +159,25 @@ Exten       STRING(4)
 
     ACCEPT
        CASE ACCEPTED()
-       OF ?GoBtn ; HIDE(?) ; 0{PROP:Timer}=5
+       OF ?GoBtn
+          ProgNdx=0 ; ProgPct=0 
+          ProgRecords=RECORDS(DirQ)
+          ProgRatio=?ProgPct{PROP:RangeHigh} / ProgRecords
+          DISABLE(?)
+          0{PROP:Timer}=1
+       OF ?RefreshBtn ; DO LoadTempFolderToDirQRtn          
        END
        CASE EVENT()
        OF EVENT:Timer 
           LOOP 16 TIMES
-                GET(DIRQ,ProgNdx+1) ; IF ERRORCODE() THEN 0{PRop:Timer}=0 ; BREAK. 
+                GET(DIRQ,ProgNdx+1) 
+                IF ERRORCODE() THEN 
+                   0{PROP:Timer}=0
+                   IF ~IsWAIT AND ~IsView THEN POST(EVENT:CloseWindow).
+                   ProgNdx -= 1
+                   BREAK
+                END
                 ProgNdx+=1
-                ?ListFiles{PROP:Selected}=ProgNdx
                 cFileName=WinTempBS & clip(DirQ:Name) 
 
                 IF 0 = YES_Delete_Files THEN
@@ -171,7 +187,9 @@ Exten       STRING(4)
                 END 
 
                 IF BAND(DirQ.Attrib,ff_:DIRECTORY) THEN  !10/23/20  Empty Folders
-                   IF ~RemoveDirectory(cFileName) THEN
+                   IF ~YES_Remove_Folders THEN 
+                       CYCLE 
+                   ELSIF ~RemoveDirectory(cFileName) THEN
                        DirQ:ShortName='Error ' & GetLastError() 
                        IF DirQ:ShortName='Error 145' THEN DirQ:ShortName='<Dir> w/Files'.
                        PUT(DIRQ) ; DISPLAY
@@ -184,12 +202,11 @@ Exten       STRING(4)
                 END 
                 DB('Deleted: ' & DirQ:Name)
           END                 
+          ?ListFiles{PROP:Selected}=ProgNdx          
           ProgPctNew = ProgNdx * ProgRatio
           IF ProgPctNew > ProgPct THEN ProgPct=ProgPctNew ; DISPLAY(?ProgPct).
-          IF 0{PRop:Timer}=0 THEN 
-             IF ~IsWAIT AND ~IsView THEN POST(EVENT:CloseWindow).
-          END
        END 
+
        CASE FIELD()
        OF ?ListFiles
           CASE EVENT() !Click Header to Sort, Right Click Reverses
@@ -280,8 +297,6 @@ LoadTempFolderToDirQRtn ROUTINE
     SortNow=1
     SortNowWho=WHO(DirQ,SortNow) 
     SORT(DirQ , DirQ:Name)  !  DirQ:Name , DirQ:ShortName , DirQ:Date , DirQ:Time , DirQ:Size , DirQ:Attrib )
-    ProgRecords=RECORDS(DirQ)
-    ProgRatio=100/ProgRecords    
     DISPLAY
     EXIT
 !------------------------------
@@ -289,13 +304,16 @@ AddFoldersToDirQRtn ROUTINE  !10/23/20 seeing a lot of Empty folders so try to r
 !This is NOT a Clarion created folder. Since I am cleaning up my user's temp I decided an empty folder over 10 days old can go.
     DATA
 FoldQ    QUEUE(FILE:Queue),PRE(FoldQ) . ! FoldQ:Name  FoldQ:ShortName(8.3?)  FoldQ:Date  FoldQ:Time  FoldQ:Size  FoldQ:Attrib
-    CODE 
+FoldCutoff LONG
+    CODE
+    IF ~YES_Remove_Folders THEN EXIT.
+    FoldCutoff=TODAY() - Folder_Cutoff_Days
     DIRECTORY(FoldQ,WinTempBS&'*.*',ff_:NORMAL+FF_:Directory)
     LOOP QNdx = RECORDS(FoldQ) TO 1 BY -1
          GET(FoldQ,QNdx)
          IF ~BAND(FoldQ:Attrib,FF_:Directory) OR FoldQ:Name='.' OR FoldQ:Name='..'   !. or .. Dirs
             CYCLE 
-         ELSIF FoldQ:Date >= DateCutoff - 7 THEN  !Keep folders extra 7 days
+         ELSIF FoldQ:Date >= FoldCutoff THEN
             CYCLE 
          END 
          FoldQ:Name=LOWER(FoldQ:Name)
