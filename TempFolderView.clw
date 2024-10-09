@@ -1,6 +1,6 @@
 !Quick way to see contents of Temp Folder
   PROGRAM
-  INCLUDE 'KEYCODES.CLW'
+  INCLUDE('KEYCODES.CLW'),ONCE
   MAP
 TempPurgeTmp    PROCEDURE()  
     MODULE('Win32')

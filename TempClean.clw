@@ -1,4 +1,4 @@
-!region Notices
+! region Notices
 ! ================================================================================
 ! MIT License
 !
@@ -23,7 +23,15 @@
 ! 
 ! WARNING: This program deletes files and they cannot be recovered.
 ! ================================================================================
-!endregion Notices
+! endregion Notices
+
+! Clarion Reports place WMF files in the Windows Temp Folder (Open Explorer to %TEMP%).
+! Some 3rd party products also place files in the Temp folder e.g. CPCS and Tracker PDF.
+! If Reports crash or users terminate the EXE during preview the Temp files are left behind.
+! As the Temp folder fills with Orphan Files it makes Reports run slower or not at all.
+! This tool remove Clarion specific Temp files. It should be run regularly on end user systems.
+! Suggest run this Clean EXE when the Frame closes about every 7 to 30 days.
+
 
   PROGRAM
 
@@ -69,7 +77,7 @@ Folder_Cutoff_Days EQUATE(10)   !<--- Folders MUST be 10 days old to be Removed
 !endregion     
 
 !=======================================================================
-  INCLUDE 'KEYCODES.CLW'
+  INCLUDE('KEYCODES.CLW'),ONCE
   MAP
 TempPurgeTmp    PROCEDURE()  
 DB              PROCEDURE(STRING xMessage)    
